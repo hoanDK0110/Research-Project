@@ -32,27 +32,6 @@ nx.write_gml(PHY, "PHY_graph.gml")
 
 nodes_PHY = list(PHY.nodes())
 
-# Lấy mảng trọng số nút
-weights_nodes_PHY = [PHY.nodes[node]['weight'] for node in nodes_PHY]
-# Lấy mảng cạnh và mảng trọng số cạnh
-edges_PHY = list(PHY.edges())
-weights_edges_PHY = [PHY.edges[edge]['weight'] for edge in edges_PHY]
-network_matrix_PHY = nx.adjacency_matrix(PHY)
-network_array_PHY = network_matrix_PHY.toarray()
-print(network_array_PHY)
-
-#SFC
-# Lấy mảng nút
-nodes_SFC = list(SFC.nodes())
-# Lấy mảng trọng số nút
-weights_nodes_SFC = [SFC.nodes[node]['weight'] for node in nodes_SFC]
-# Lấy mảng cạnh và mảng trọng số cạnh
-edges_SFC = list(SFC.edges())
-weights_edges_SFC = [SFC.edges[edge]['weight'] for edge in edges_SFC]
-network_matrix_SFC = nx.adjacency_matrix(SFC)
-network_array_SFC = network_matrix_SFC.toarray()
-
-nodes_SFC, weights_nodes_SFC, edges_SFC, weights_edges_SFC, network_array_SFC
 
 plt.subplot(121)
 elarge = [(u, v) for (u, v, d) in PHY.edges(data=True)]

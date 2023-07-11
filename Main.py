@@ -2,10 +2,13 @@ import numpy as np
 import networkx as nx
 
 
-num_episodes=5000
-learning_rate=0.1
-discount_factor=0.9
-exploration_rate=0.2
+num_episodes = 10000
+learning_rate = 0.2
+discount_factor = 0.99
+exploration_rate = 0.9
+c_start_ep_epsilon_decay = 1
+c_end_ep_epsilon_decay = num_episodes
+v_epsilon_decay = exploration_rate / (c_end_ep_epsilon_decay - c_start_ep_epsilon_decay)
 
 PHY = nx.read_gml("PHY_graph.gml")
 SFC = nx.read_gml("SFC_graph.gml")
@@ -17,15 +20,11 @@ class SFCMappingEnvironment:
         # Thiết lập mạng vật lý
         self.PHY_nodes = list(PHY.nodes())
         self.PHY_weights_node = [PHY.nodes[node]['weight'] for node in self.PHY_nodes]
-        self.PHY_edges = list(PHY.edges())
-        self.PHY_weight_edges = [PHY.edges[edge]['weight'] for edge in self.PHY_edges]
         self.PHY_array = nx.adjacency_matrix(PHY).toarray()
         
         # Thiết lập mạng SFC
         self.SFC_nodes = list(SFC.nodes())
         self.SFC_weights_node = [SFC.nodes[node]['weight'] for node in self.SFC_nodes]
-        self.SFC_edges = list(SFC.edges())
-        self.SFC_weight_edges = [SFC.edges[edge]['weight'] for edge in self.SFC_edges]
         self.SFC_array = nx.adjacency_matrix(SFC).toarray()
 
         # Thiết lập không gian trạng thái và hành động
@@ -65,7 +64,7 @@ def dijkstra(graph, start, end, weight_requirement):
             while node is not None:
                 path.insert(0, node)
                 node = previous[node]
-            return len(path)  # Trả về số lượng nút phải đi qua và đường đi
+            return len(path) , path # Trả về số lượng nút phải đi qua và đường đi
 
         # Cập nhật khoảng cách và nút trước đó cho các nút kề
         for neighbor in range(num_nodes):
@@ -75,7 +74,7 @@ def dijkstra(graph, start, end, weight_requirement):
                     distances[neighbor] = new_distance
                     previous[neighbor] = min_node
 
-    return -1  # Không tìm thấy đường đi từ nút bắt đầu đến nút kết thúc
+    return -1 ,[] # Không tìm thấy đường đi từ nút bắt đầu đến nút kết thúc
       
 def find_max_values(array):
     # Đếm số hàng và số cột của mảng
@@ -120,7 +119,7 @@ def sum_q(arr):
 
     return sum_max_values
 
-def Calculator(current_state_space, q_table, selected_action_space, current_state, action, reward):
+def calculator_q(current_state_space, q_table, selected_action_space, current_state, action, reward):
     if current_state_space: # Tính Q_value cho trạng thái không phải cuối cùng
         # Copy mảng trạng thái kế
         array_next_state = q_table[current_state_space[0]].copy()
@@ -131,6 +130,18 @@ def Calculator(current_state_space, q_table, selected_action_space, current_stat
     else: # Tính Q_value cho trạng thái cuối cùng
         q_table[current_state][action] = (1 - learning_rate) * q_table[current_state][action] + learning_rate * reward
 
+def calculate_total_weight(adjacency_matrix, node_list):
+    total_weight = 0
+    num_nodes = len(node_list)
+
+    for i in range(num_nodes - 1):
+        node1 = node_list[i]
+        node2 = node_list[i + 1]
+
+        weight = adjacency_matrix[node1][node2]
+        total_weight += weight
+
+    return total_weight
 
 # Thuật toán Q-Learning
 def q_learning(env, num_episodes, learning_rate, discount_factor, exploration_rate):
@@ -154,7 +165,7 @@ def q_learning(env, num_episodes, learning_rate, discount_factor, exploration_ra
             #print("current_state: ",current_state)
             selected_state_array = np.append(selected_state_array, current_state)# lưu trạng thái vừa chọn vào mảng để tính toán reward
             #print("selected_state_array: ",selected_state_array)
-            
+    
             # Chọn hành động (chọn node PHY) thỏa mãn cap of PHY node > cap of SFC node và link map giữa 2 node PHY > link giữa 2 SFC liên tiếp
             while 1:
                 # Khám phá
@@ -171,23 +182,26 @@ def q_learning(env, num_episodes, learning_rate, discount_factor, exploration_ra
                         break
                     else: # Nếu là hành động thứ 3 trở đi được chọn
                         #print("selected_action_space: ", selected_action_space[-1])
-                        num_hop = dijkstra(env.PHY_array, int(selected_action_space[-1])  , action, env.SFC_array[current_state - 1][current_state]) # Tính toán xem có đường đi có thỏa mãn trọng số 
-                        #print("path: ",path)
+                        num_hop, path = dijkstra(env.PHY_array, int(selected_action_space[-1])  , action, env.SFC_array[current_state - 1][current_state]) # Tính toán xem có đường đi có thỏa mãn trọng số 
+                        total_weight_edge = calculate_total_weight(env.PHY_array, path)
+                        #print("total_weight_edge: ",total_weight_edge)
                         if num_hop != - 1: # Nếu có đường đi thì hành động sẽ được chọn và lưu trữ
                             selected_action_space = np.append(selected_action_space,action)
                             break
             #print("Action:", action)
             if len(selected_state_array) == 1: # Tính toán Reward cho hành động đầu tiên
-                reward = 10 - (env.PHY_weights_node[action] - env.SFC_weights_node[current_state])
-                Calculator(current_state_space, q_table, selected_action_space, current_state, action, reward)
+                reward = 20 - (env.PHY_weights_node[action] - env.SFC_weights_node[current_state])
+                calculator_q(current_state_space, q_table, selected_action_space, current_state, action, reward)
             else: # Tính toán Reward cho hành động từ lần thứ 2
-                reward = 10 - (env.PHY_weights_node[action] - env.SFC_weights_node[current_state]) - num_hop
-                Calculator(current_state_space, q_table, selected_action_space, current_state, action, reward)
+                reward = 20 - (env.PHY_weights_node[action] - env.SFC_weights_node[current_state]) - num_hop - 2 * (total_weight_edge - (num_hop - 1) * env.SFC_array[current_state - 1][current_state])
+                calculator_q(current_state_space, q_table, selected_action_space, current_state, action, reward)
             sum_reward += reward   
         
         reward_array = np.append(reward_array,sum_reward) #Lưu trữ giá trị reward nhận được ở mỗi episode
         sum_of_max_q_value = sum_q(q_table)
         q_array = np.append(q_array, sum_of_max_q_value)
+        if c_end_ep_epsilon_decay >= episode > c_start_ep_epsilon_decay:
+            exploration_rate = exploration_rate - v_epsilon_decay
         
     np.savetxt('data_q.txt', q_array) # Xuất giá trị ra file
     np.savetxt('data_reward.txt', reward_array) # Xuất giá trị ra file
@@ -203,7 +217,7 @@ q_table = q_learning(env, num_episodes, learning_rate, discount_factor, explorat
 print("Q table co gia tri la:" , q_table)
 
 max_values, max_positions = find_max_values(q_table)
-print(max_values)
-print(max_positions)
+print("max_values: ", max_values)
+print("max_positions: ", max_positions)
 
 
